@@ -1,11 +1,11 @@
-import express, { json } from 'express';
-import expressWs from 'express-ws';
-import session from 'express-session';
-import cors from 'cors';
-import connectDB from './config/db.js';
-import authRoutes from './routes/authRoutes.js';
-import dockerRoutes from './routes/dockerRoutes.js';
-import dotenv from 'dotenv';
+import express, { json } from "express";
+import expressWs from "express-ws";
+import session from "express-session";
+import cors from "cors";
+import connectDB from "./config/db.js";
+import authRoutes from "./routes/authRoutes.js";
+import dockerRoutes from "./routes/dockerRoutes.js";
+import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
@@ -17,10 +17,15 @@ connectDB();
 // Middleware
 app.use(
   cors({
-    methods: ['GET', 'POST', 'PUT', 'DELETE'], // Allow specific methods if needed
+    methods: ["GET", "POST", "PUT", "DELETE"], // Allow specific methods if needed
     credentials: true, // Allow sending cookies with requests
   })
 );
+// const expressWs = require("express-ws")(app);
+app.ws("/api/docker/containers/:containerId/terminal", (ws, req) => {
+  attachTerminal(ws, req);
+});
+
 app.use(json());
 app.use(
   session({
@@ -32,8 +37,8 @@ app.use(
 );
 
 // Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/docker', dockerRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/docker", dockerRoutes);
 // app.use('ws:')
 
 export default app;
