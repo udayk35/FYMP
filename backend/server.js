@@ -1,11 +1,9 @@
-import express from "express";
 import http from "http";
 import { Server } from "socket.io";
-import cors from "cors";
 import Docker from "dockerode";
+import app from "./app.js"; // Import the main Express app
 
-const app = express();
-const server = http.createServer(app);
+const server = http.createServer(app); // Use app.js for API routes
 const io = new Server(server, {
   cors: {
     origin: "*", // Adjust as needed
@@ -14,20 +12,6 @@ const io = new Server(server, {
 });
 
 const docker = new Docker({ socketPath: "/var/run/docker.sock" });
-
-app.use(cors());
-app.use(express.json());
-
-// API to list running containers
-app.get("/api/docker/containers", async (req, res) => {
-  try {
-    const containers = await docker.listContainers();
-    res.json(containers);
-  } catch (err) {
-    console.error("Error fetching containers:", err);
-    res.status(500).json({ error: "Error fetching containers" });
-  }
-});
 
 // WebSocket connection for interactive terminal
 io.on("connection", (socket) => {
@@ -71,6 +55,8 @@ io.on("connection", (socket) => {
   });
 });
 
-server.listen(5000, () => {
-  console.log("Server running on port 5000");
+// Start the server
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
