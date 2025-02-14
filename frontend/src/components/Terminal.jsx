@@ -1,98 +1,56 @@
-import { useEffect, useRef } from "react";
-import { Terminal } from "xterm";
-import "xterm/css/xterm.css";
-import { w3cwebsocket as W3CWebSocket } from "websocket";
+import { useState, useEffect } from "react";
+import { io } from "socket.io-client";
 
-export default function TerminalComponent({ containerId }) {
-  const terminalRef = useRef(null);
-  const term = useRef(null);
-  const ws = useRef(null);
-  let commandBuffer = "";
-  let history = [];
-  let historyIndex = -1;
-
+const Terminal = ({ containerId }) => {
+  const [socket, setSocket] = useState(null);
+  const [output, setOutput] = useState("");
+  const [command, setCommand] = useState("");
 
   useEffect(() => {
-    const initializeTerminal = () => {
-      if (terminalRef.current && !term.current) {
-        term.current = new Terminal({
-          cursorBlink: true,
-          theme: {
-            background: "#1e1e1e",
-            foreground: "#ffffff",
-          },
-        });
+    if (!containerId) return;
 
-        term.current.open(terminalRef.current);
-        term.current.write(`\u001b[32mConnected to container ${containerId}\u001b[0m\r\n`);
+    const newSocket = io("ws://192.168.0.187:5000"); // Change to backend IP
+    setSocket(newSocket);
 
-        // WebSocket Connection
-        ws.current = new W3CWebSocket(`ws://192.168.0.105:5000/api/docker/containers/${containerId}/terminal`);
+    newSocket.emit("start_terminal", { containerId });
 
-        ws.current.onopen = () => {
-          console.log("WebSocket connected");
-        };
+    newSocket.on("terminal_output", (data) => {
+      setOutput((prev) => prev + data);
+    });
 
-        ws.current.onmessage = (message) => {
-          console.log("Received:", message.data);
-          term.current.write(message.data);
-        };
-
-        ws.current.onerror = (error) => {
-          console.error("WebSocket Error:", error);
-        };
-
-        ws.current.onclose = () => {
-          console.log("WebSocket closed");
-          term.current.write("\r\n\u001b[31mDisconnected from terminal\u001b[0m\r\n");
-        };
-
-        // Handle user input
-        term.current.onData((data) => {
-          if (data === "\r") {
-            // Handle Enter key
-            term.current.write("\r\n");
-            if (commandBuffer.trim()) {
-              console.log("Sending command:", commandBuffer);
-              ws.current.send(commandBuffer);
-              history.push(commandBuffer);
-              historyIndex = history.length; // Reset history index
-            }
-            else{
-              ws.current.send('\r');
-            }
-            commandBuffer = "";
-          } else if (data === "\x7F") {
-            // Handle Backspace, ensuring only input is erased, not output
-            if (commandBuffer.length > 0) {
-              commandBuffer = commandBuffer.slice(0, -1);
-              term.current.write("\b \b");
-            }
-          } else if (data === "\x1b[A") {
-          } else if (data === "\x1b[B") {
-          } else if (data === "\x1b[D") {
-          } else if (data === "\x1b[C") {
-          } else {
-            commandBuffer += data;
-            term.current.write(data);
-          }
-        });
-        
-        function redrawCommand() {
-          term.current.write("\r\x1b[K"); // Clear the current line
-          term.current.write(commandBuffer); // Rewrite the command buffer
-        }
-      }
-    };
-
-    const timeoutId = setTimeout(initializeTerminal, 100);
-
-    return () => {
-      clearTimeout(timeoutId);
-      term.current?.dispose();
-      ws.current?.close();
-    };
+    return () => newSocket.disconnect();
   }, [containerId]);
 
-  return <div ref={terminalRef} className="p-4 bg-black h-64 overflow-hidden" style={{ width: "100%", height: "100%" }} />;
-}
+  const sendCommand = () => {
+    if (socket && command.trim() !== "") {
+      console.log("Sending command:", command);
+      socket.emit("command", command);
+      setCommand(""); // Clear input after sending
+    }
+  };
+
+  return (
+    <div>
+      <pre
+        style={{
+          background: "black",
+          color: "white",
+          padding: "10px",
+          height: "300px",
+          overflowY: "scroll",
+        }}
+      >
+        {output}
+      </pre>
+      <input
+        type='text'
+        value={command}
+        onChange={(e) => setCommand(e.target.value)}
+        placeholder='Type a command...'
+      />
+      <button onClick={sendCommand}>Send</button>
+    </div>
+  );
+};
+
+export default Terminal;
