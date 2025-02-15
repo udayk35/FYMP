@@ -9,7 +9,7 @@ const Terminal = ({ containerId }) => {
   useEffect(() => {
     if (!containerId) return;
 
-    const newSocket = io("ws://192.168.0.187:5000"); // Change to backend IP
+    const newSocket = io("ws://localhost:5000"); // Change to backend IP
     setSocket(newSocket);
 
     newSocket.emit("start_terminal", { containerId });
