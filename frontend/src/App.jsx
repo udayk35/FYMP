@@ -6,6 +6,7 @@ import Dashboard from "./pages/Dashboard";
 import ResourceProvider from "./pages/ResourceProvider";
 import ResourceConsumer from "./pages/ResourceConsumer";
 import ProtectedRoute from "./components/ProtectedRoute";
+import "bootstrap/dist/css/bootstrap.min.css";
 
 const App = () => {
   const API_URL = "http://localhost:5000";

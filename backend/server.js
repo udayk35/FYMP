@@ -1,19 +1,18 @@
 import http from "http";
 import { Server } from "socket.io";
 import Docker from "dockerode";
-import app from "./app.js"; // Import the main Express app
+import app from "./app.js";
 
-const server = http.createServer(app); // Use app.js for API routes
+const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*", // Adjust as needed
+    origin: "*",
     methods: ["GET", "POST"],
   },
 });
 
 const docker = new Docker({ socketPath: "/var/run/docker.sock" });
 
-// WebSocket connection for interactive terminal
 io.on("connection", (socket) => {
   console.log("Client connected to WebSocket");
 
@@ -40,8 +39,7 @@ io.on("connection", (socket) => {
       });
 
       socket.on("command", (command) => {
-        console.log(`Executing command: ${command}`);
-        stream.write(command + "\n");
+        stream.write(command);
       });
 
       socket.on("disconnect", () => {
@@ -55,7 +53,6 @@ io.on("connection", (socket) => {
   });
 });
 
-// Start the server
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

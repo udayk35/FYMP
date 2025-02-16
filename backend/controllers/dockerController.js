@@ -62,7 +62,7 @@ export async function createContainer(req, res) {
       Tty: true, // Enables TTY (like `-t` in CLI)
       AttachStdin: true, // Allow input to be attached (`-i`)
       OpenStdin: true,
-      WorkingDir: "/app",
+      WorkingDir: "/", // Set working directory to root
       HostConfig: {
         PortBindings: portBindings, // Map container ports to host ports
       },
@@ -76,6 +76,7 @@ export async function createContainer(req, res) {
     res.status(500).json({ error: err.message });
   }
 }
+
 // Read a file from the container
 export const readFile = async (req, res) => {
   const { containerId, filePath } = req.body;
@@ -140,8 +141,7 @@ export const listFiles = async (req, res) => {
   }
 };
 
-//Terminal access:
-
+// Terminal access
 export const attachTerminal = (ws, req) => {
   const { containerId } = req.params;
   console.log("🔗 Connecting to container:", containerId);
@@ -186,6 +186,41 @@ export const attachTerminal = (ws, req) => {
 
           console.log("✅ Terminal attached to container!");
 
+          // Function to send the current directory as a prompt
+          const sendPrompt = () => {
+            console.log("Sending prompt..."); // Debug log
+            container.exec(
+              {
+                Cmd: ["pwd"], // Get the current directory
+                AttachStdout: true,
+                AttachStderr: true,
+              },
+              (err, exec) => {
+                if (err) {
+                  console.error("Error creating exec instance for pwd:", err); // Debug log
+                  return;
+                }
+                exec.start({ hijack: true, stdin: false }, (err, stream) => {
+                  if (err) {
+                    console.error("Error starting exec instance for pwd:", err); // Debug log
+                    return;
+                  }
+                  let output = "";
+                  stream.on("data", (chunk) => (output += chunk.toString()));
+                  stream.on("end", () => {
+                    const currentDir = output.trim();
+                    console.log("Current directory:", currentDir); // Debug log
+                    // Send the prompt with the current directory
+                    ws.send(`\x1b[32m${currentDir}# \x1b[0m`);
+                  });
+                });
+              }
+            );
+          };
+
+          // Send the initial prompt
+          sendPrompt();
+
           // Send container output to WebSocket
           container.modem.demuxStream(
             stream,
@@ -202,6 +237,7 @@ export const attachTerminal = (ws, req) => {
           ws.on("message", (message) => {
             console.log(`✉️ Received command from frontend: ${message}`);
             stream.write(message + "\n"); // Send command to container
+            sendPrompt(); // Send prompt after command execution
           });
 
           // Handle WebSocket closure
@@ -219,4 +255,3 @@ export const attachTerminal = (ws, req) => {
     );
   });
 };
-// export { attachTerminal };
