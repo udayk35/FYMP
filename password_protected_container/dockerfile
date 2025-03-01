@@ -1,0 +1,16 @@
+FROM ubuntu:22.04
+
+# Install bash
+RUN apt-get update && apt-get install -y bash
+
+# Create a non-root user
+RUN useradd -m myuser
+
+# Set a password for the user
+RUN echo 'myuser:mypassword' | chpasswd
+
+# Switch to the non-root user
+USER myuser
+
+# Set the default shell to a login shell
+CMD ["bash", "--login"]
