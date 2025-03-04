@@ -1,0 +1,33 @@
+/* button */
+.button {
+    width: 160px; 
+    height: 36px; 
+    padding: 12px 12px; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    font-family: Inter; 
+    font-size: 14px; 
+    line-height: 22px; 
+    font-weight: 400; 
+    color: rgba(255,255,255,1); /* white */
+    background: rgba(99,106,232,1); /* primary-500 */
+    opacity: 1; 
+    border: none; 
+    border-radius: 10px; /* border-l */
+    margin: 5px;
+  }
+  /* Hover */
+  .button:hover {
+    color: rgba(255,255,255,1); /* white */
+    background: rgba(72,80,228,1); /* primary-550 */
+  }
+  /* Pressed */
+  .button:hover:active {
+    color: rgba(255,255,255,1); /* white */
+    background: rgba(44,53,224,1); /* primary-600 */
+  }
+  /* Disabled */
+  .button:disabled {
+    opacity: 0.4; 
+  }

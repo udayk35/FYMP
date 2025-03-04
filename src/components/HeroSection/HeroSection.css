@@ -1,0 +1,18 @@
+
+.hero-section{
+    height: 90vh;
+}
+.hero-section-container{
+    overflow: hidden;
+}
+.hero-section-container h1, .hero-section-container p, .hero-section-container button{
+    margin: 10px;
+}
+.hero-section img{
+    width: 100vw;
+    overflow: hidden;
+}
+.hero-section .button{
+    font-size: 20px;
+
+}

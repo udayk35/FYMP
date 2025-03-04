@@ -1,0 +1,58 @@
+/* Container */
+.container {
+  height: 56px; 
+  margin-bottom: 10px;
+}
+.flex-container{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* Header Menu */
+.header-menu {
+  width: 300px; 
+  height: 52px; 
+  display: flex; 
+  align-items: center; 
+  font-family: Inter; /* Body */
+  font-size: 14px; 
+  line-height: 22px; 
+  font-weight: 400; 
+  opacity: 1; 
+}
+/* Header Menu - Item */
+.header-menu .header-menu-item {
+  padding: 15px 12px; 
+  display: flex; 
+  font-size: 18px;
+  align-items: center; 
+  justify-content: center; 
+  color: rgba(86,94,108,1); /* neutral-600 */
+  border-radius: 6px; /* border-m */
+  cursor: pointer; 
+  white-space: nowrap; 
+}
+/* Header Menu - Selected item */
+.header-menu .header-menu-item.selected {
+  position: relative; 
+  font-weight: 700; 
+  color: rgba(99,106,232,1); /* primary-500 */
+}
+/* Image */
+.image {
+  width: 36px; 
+  height: 36px; 
+  border-radius: 0px; 
+}
+.text {
+  font-family: Archivo; /* Heading */
+  font-size: 28px; 
+  line-height: 42px; 
+  font-weight: 700; 
+  color: rgba(0,0,0,1); /* black */
+}
+
+
+/* Button */
