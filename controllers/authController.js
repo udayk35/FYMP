@@ -6,7 +6,8 @@ const { hash, compare } = bcryptjs;
 const { sign } = jwt;
 // Register a new user
 export async function register(req, res) {
-  const { username, email, password } = req.body;
+  const { name, email, password } = req.body;
+  const username = name;
   try {
     // Check if user already exists
     const existingUser = await User.findOne({ email });

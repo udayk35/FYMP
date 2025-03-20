@@ -1,8 +1,8 @@
 
 import axios from 'axios';
+import WebSocket from 'ws';
 
 const providers = new Map();
-
 
 const handleHeartbeat = (req, res) => {
     const {
@@ -15,7 +15,31 @@ const handleHeartbeat = (req, res) => {
     } = req.body;
 
     const ip = req.headers['x-forwarded-for'] || req.ip;
-    const providerKey = `${userID}-${providerID}`;
+    const providerKey = `${providerID}`;
+
+    let ws = providers.get(providerKey)?.ws;
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        const wsURL = `ws://${ip}:${port}`;
+        ws = new WebSocket(wsURL);
+
+        ws.on('open', () => {
+            console.log(`WebSocket connected to ${wsURL}`);
+        });
+
+        ws.on('message', (message) => {
+            console.log(`Message from ${providerKey}:`, message.toString());
+        });
+
+        ws.on('close', () => {
+            console.log(`WebSocket closed for provider ${providerKey}`);
+            providers.delete(providerKey);  // Remove provider when disconnected
+        });
+
+        ws.on('error', (error) => {
+            console.error(`WebSocket error for provider ${providerKey}:`, error);
+        });
+    }
 
     providers.set(providerKey, {
         userID,
@@ -25,6 +49,7 @@ const handleHeartbeat = (req, res) => {
         port,
         containerID,
         status,
+        ws,
         lastHeartbeat: Date.now(),
         registeredAt: new Date().toISOString()
     });
@@ -244,10 +269,52 @@ const writeFile = async (req,res) =>{
         });
     }
 }
-const attachTerminal = (ws, req)=>{
-    const {containerID, providerID} = req.params;
-    
-}
+const attachTerminal = (ws, req) => {
+    const { containerID, providerID } = req.params;
+
+    if (!containerID || !providerID) {
+        ws.send(JSON.stringify({ error: "Missing containerID or providerID" }));
+        ws.close();
+        return;
+    }
+
+    const provider = providers.get(providerID);
+
+    if (!provider || !provider.ws || provider.ws.readyState !== WebSocket.OPEN) {
+        ws.send(JSON.stringify({ error: "Provider not available or WebSocket not connected" }));
+        ws.close();
+        return;
+    }
+
+    console.log(`Attaching terminal for container ${containerID} on provider ${providerID}`);
+
+    // Handle messages from the client and forward them to the provider
+    ws.on("message", (message) => {
+        console.log(`Command from client: ${message}`);
+        provider.ws.send(JSON.stringify({ containerID, command: message }));
+    });
+
+    // Handle messages from the provider and relay them to the client
+    provider.ws.on("message", (data) => {
+        try {
+            const response = JSON.parse(data);
+            if (response.containerID === containerID) {
+                ws.send(response.output); // Send the container output back to the client
+            }
+        } catch (err) {
+            console.error("Invalid response from provider:", data);
+        }
+    });
+
+    // Handle WebSocket close events
+    ws.on("close", () => {
+        console.log("Client disconnected from terminal session.");
+    });
+
+    ws.on("error", (error) => {
+        console.error("WebSocket Error:", error);
+    });
+};
 export {
     handleHeartbeat,
     getAllProviders,
