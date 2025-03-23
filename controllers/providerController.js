@@ -1,45 +1,24 @@
-
 import axios from 'axios';
 import WebSocket from 'ws';
 
 const providers = new Map();
+const consumerProviderMap = new Map();
+
+
+const normalizeIP = (ip) => ip.startsWith('::ffff:') ? ip.split(':').pop() : ip;
 
 const handleHeartbeat = (req, res) => {
-    const {
-        userID,
-        providerID,
-        providerName,
-        port,
-        containerID,
-        status = 'active'
-    } = req.body;
+    const { userID, providerID, providerName, port, status = 'active' } = req.body;
 
-    const ip = req.headers['x-forwarded-for'] || req.ip;
-    const providerKey = `${providerID}`;
-
-    let ws = providers.get(providerKey)?.ws;
-
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-        const wsURL = `ws://${ip}:${port}`;
-        ws = new WebSocket(wsURL);
-
-        ws.on('open', () => {
-            console.log(`WebSocket connected to ${wsURL}`);
-        });
-
-        ws.on('message', (message) => {
-            console.log(`Message from ${providerKey}:`, message.toString());
-        });
-
-        ws.on('close', () => {
-            console.log(`WebSocket closed for provider ${providerKey}`);
-            providers.delete(providerKey);  // Remove provider when disconnected
-        });
-
-        ws.on('error', (error) => {
-            console.error(`WebSocket error for provider ${providerKey}:`, error);
-        });
+    if (!providerID || !port) {
+        return res.status(400).json({ error: 'Missing required fields' });
     }
+
+    const ip = normalizeIP(req.headers['x-forwarded-for'] || req.ip);
+    const providerKey = providerID;
+
+    const existingProvider = providers.get(providerKey);
+    let registeredAt = existingProvider?.registeredAt || new Date().toISOString();
 
     providers.set(providerKey, {
         userID,
@@ -47,32 +26,29 @@ const handleHeartbeat = (req, res) => {
         providerName,
         ip,
         port,
-        containerID,
         status,
-        ws,
         lastHeartbeat: Date.now(),
-        registeredAt: new Date().toISOString()
+        registeredAt,
     });
-
-    res.json({ 
-        status: 'ACK',
-        timestamp: Date.now() 
-    });
+    res.json({ status: 'ACK', timestamp: Date.now() });
 };
 
+const getAllProviders = (req, res) => res.json(Array.from(providers.values()));
 
+const getProviderById = (id) => providers.get(id);
 
-const getAllProviders = (req, res) => {
-    res.json(Array.from(providers.values()));
-};
+export const getProviderByProviderId = (req, res) => {
+    try {
+        const { providerId } = req.params;
+        console.log(providerId);
+        const provider = getProviderById(providerId);
 
-const getProviderById = (req, res) => {
-    const provider = Array.from(providers.values()).find(
-        p => p.providerID === req.params.providerId
-    );
-    res.json(provider || { error: 'Provider not found' });
-};
-
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+        res.json(provider);
+    } catch (error) {
+        res.status(500).json(error.message);
+    }
+}
 const cleanupProviders = (timeout = 30000) => {
     const now = Date.now();
     for (const [key, provider] of providers.entries()) {
@@ -83,262 +59,161 @@ const cleanupProviders = (timeout = 30000) => {
     }
 };
 
-const startContainer =async (req,res)=>{
+const makeRequestToProvider = async (provider, endpoint, method = 'post', data = {}, timeout = 5000) => {
+    return axios({
+        method,
+        url: `http://${provider.ip}:${provider.port}/${endpoint}`,
+        data,
+        timeout,
+    });
+};
+
+const startContainer = async (req, res) => {
     try {
-        const { providerId } = req.params;
-        const { containerId } = req.body;
+        const { providerId, containerId } = req.body;
         const provider = getProviderById(providerId);
 
-        if (!provider) {
-            return res.status(404).json({ error: 'Provider not found' });
-        }
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
-        const response = await axios.post(
-            `http://${provider.ip}:${provider.port}/containers/start`,
-            { containerId },
-            { timeout: 5000 }
-        );
+        const response = await makeRequestToProvider(provider, `containers/${containerId}/start`);
         res.json(response.data);
     } catch (error) {
-        res.status(500).json({
-            error: 'Failed to start container',
-            details: error.message
-        });
+        res.status(500).json({ error: 'Failed to start container', details: error.message });
     }
-}
-const stopContainer = async (req,res)=>{
+};
+
+const stopContainer = async (req, res) => {
     try {
-        const { providerId } = req.params;
-        const { containerId } = req.body;
+        const { providerId, containerId } = req.body;
         const provider = getProviderById(providerId);
 
-        if (!provider) {
-            return res.status(404).json({ error: 'Provider not found' });
-        }
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
-        const response = await axios.post(
-            `http://${provider.ip}:${provider.port}/containers/stop`,
-            { containerId },
-            { timeout: 5000 }
-        );
+        const response = await makeRequestToProvider(provider, `containers/${containerId}/stop`);
         res.json(response.data);
     } catch (error) {
-        res.status(500).json({
-            error: 'Failed to stop container',
-            details: error.message
-        });
+        res.status(500).json({ error: 'Failed to stop container', details: error.message });
     }
-}
+};
 
-const pullImage = async (req,res)=>{
+const pullImage = async (req, res) => {
     try {
-        const { providerId } = req.params;
-        const { image } = req.body;
+        const { providerId, image } = req.body;
         const provider = getProviderById(providerId);
 
-        if (!provider) {
-            return res.status(404).json({ error: 'Provider not found' });
-        }
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
-        const response = await axios.post(
-            `http://${provider.ip}:${provider.port}/images/pull`,
-            { image },
-            { timeout: 15000 }
-        );
+        const response = await makeRequestToProvider(provider, 'images/pull', 'post', { imageName: image }, 15000);
         res.json(response.data);
     } catch (error) {
-        res.status(500).json({
-            error: 'Failed to pull image',
-            details: error.message
-        });
+        res.status(500).json({ error: 'Failed to pull image', details: error.message });
     }
-}
+};
 
-const createContainer = async (req,res)=>{
+const createContainer = async (req, res) => {
     try {
-        const { providerId } = req.params;
-        const { image, options } = req.body;
+        const { providerId, image, options } = req.body;
         const provider = getProviderById(providerId);
 
-        if (!provider) {
-            return res.status(404).json({ error: 'Provider not found' });
-        }
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
-        const response = await axios.post(
-            `http://${provider.ip}:${provider.port}/containers/create`,
-            { image, options },
-            { timeout: 10000 }
-        );
+        const response = await makeRequestToProvider(provider, 'containers/create', 'post', { image, options }, 10000);
+        const { containerId } = response.data;
+
+        const wsURL = `ws://${provider.ip}:${provider.port}/${containerId}/terminal`;
+        const ws = new WebSocket(wsURL);
+
+        ws.on('open', () => console.log(`WebSocket connected to provider ${providerId} at ${wsURL}`));
+        ws.on('message', (message) => console.log(`Message from provider ${providerId}:`, message.toString()));
+        ws.on('close', () => console.log(`WebSocket closed for provider ${providerId}`));
+        ws.on('error', (error) => console.error(`WebSocket error for provider ${providerId}:`, error));
+
+        const token = req.header('Authorization')?.replace('Bearer ', '');
+        consumerProviderMap.set(token, { providerId, image, containerId, ws });
         res.json(response.data);
     } catch (error) {
-        res.status(500).json({
-            error: 'Failed to create container',
-            details: error.message
-        });
+        res.status(500).json({ error: 'Failed to create container', details: error.message });
     }
+};
 
-}
-
-const getSystemInfo = async (req,res)=>{
-    try {
-        const { providerId } = req.params;
-        const provider = getProviderById(providerId);
-
-        if (!provider) {
-            return res.status(404).json({ error: 'Provider not found' });
-        }
-
-        const response = await axios.get(
-            `http://${provider.ip}:${provider.port}/system/info`,
-            { timeout: 3000 }
-        );
-        res.json(response.data);
-    } catch (error) {
-        res.status(500).json({
-            error: 'Failed to get system info',
-            details: error.message
-        });
-    }
-}
-
-const readFile = async (req,res) =>{
-    try {
-        const { providerId } = req.params;
-        const { path } = req.query;
-        const provider = getProviderById(providerId);
-
-        if (!provider) {
-            return res.status(404).json({ error: 'Provider not found' });
-        }
-
-        const response = await axios.get(
-            `http://${provider.ip}:${provider.port}/files/read`,
-            { params: { path }, timeout: 5000 }
-        );
-        res.json(response.data);
-    } catch (error) {
-        res.status(500).json({
-            error: 'Failed to read file',
-            details: error.message
-        });
-    }
-}
-const listFiles = async (req,res) =>{
-    try {
-        const { providerId } = req.params;
-        const { path } = req.query;
-        const provider = getProviderById(providerId);
-
-        if (!provider) {
-            return res.status(404).json({ error: 'Provider not found' });
-        }
-
-        const response = await axios.get(
-            `http://${provider.ip}:${provider.port}/files/list`,
-            { params: { path }, timeout: 5000 }
-        );
-        res.json(response.data);
-    } catch (error) {
-        res.status(500).json({
-            error: 'Failed to list files',
-            details: error.message
-        });
-    }
-}
-
-const writeFile = async (req,res) =>{
-    try {
-        const { providerId } = req.params;
-        const { path, content } = req.body;
-        const provider = getProviderById(providerId);
-
-        if (!provider) {
-            return res.status(404).json({ error: 'Provider not found' });
-        }
-
-        const response = await axios.post(
-            `http://${provider.ip}:${provider.port}/files/write`,
-            { path, content },
-            { timeout: 5000 }
-        );
-        res.json(response.data);
-    } catch (error) {
-        res.status(500).json({
-            error: 'Failed to write file',
-            details: error.message
-        });
-    }
-}
 const attachTerminal = (ws, req) => {
-    const { containerID, providerID } = req.params;
-
-    if (!containerID || !providerID) {
-        ws.send(JSON.stringify({ error: "Missing containerID or providerID" }));
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    const session = consumerProviderMap.get(token);
+    console.log(token);
+    console.log(consumerProviderMap);
+    console.log(session);
+    if (!session || !session.ws || session.ws.readyState !== WebSocket.OPEN) {
+        ws.send(JSON.stringify({ error: 'No active terminal session found' }));
         ws.close();
         return;
     }
 
-    const provider = providers.get(providerID);
+    console.log(`Attaching terminal for container ${session.containerId} on provider ${session.providerId}`);
 
-    if (!provider || !provider.ws || provider.ws.readyState !== WebSocket.OPEN) {
-        ws.send(JSON.stringify({ error: "Provider not available or WebSocket not connected" }));
-        ws.close();
-        return;
+    ws.on('message', (message) => {
+        console.log(message);
+        session.ws.send(JSON.stringify(message))});
+    session.ws.on('message', (data) => ws.send(data.toString()));
+
+    ws.on('close', () => console.log('Client disconnected from terminal session.'));
+    ws.on('error', (error) => console.error('WebSocket Error:', error));
+};
+
+const readFile = async (req, res) => {
+    try {
+        const { providerId, containerId, path } = req.body;
+        const provider = getProviderById(providerId);
+
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        const response = await makeRequestToProvider(provider, `containers/read-file`, 'post', { containerId, path });
+        res.json(response.data);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to read file', details: error.message });
     }
-
-    console.log(`Attaching terminal for container ${containerID} on provider ${providerID}`);
-
-    // Handle messages from the client and forward them to the provider
-    ws.on("message", (message) => {
-        console.log(`Command from client: ${message}`);
-        provider.ws.send(JSON.stringify({ containerID, command: message }));
-    });
-
-    // Handle messages from the provider and relay them to the client
-    provider.ws.on("message", (data) => {
-        try {
-            const response = JSON.parse(data);
-            if (response.containerID === containerID) {
-                ws.send(response.output); // Send the container output back to the client
-            }
-        } catch (err) {
-            console.error("Invalid response from provider:", data);
-        }
-    });
-
-    // Handle WebSocket close events
-    ws.on("close", () => {
-        console.log("Client disconnected from terminal session.");
-    });
-
-    ws.on("error", (error) => {
-        console.error("WebSocket Error:", error);
-    });
-};
-export {
-    handleHeartbeat,
-    getAllProviders,
-    getProviderById,
-    cleanupProviders,
-    providers,
-
-
-    startContainer,
-    stopContainer,
-    createContainer,
-    pullImage,
-    getSystemInfo,
-    
-
-
-    readFile,
-    listFiles,
-    writeFile,
-
-    attachTerminal
 };
 
+const listFiles = async (req, res) => {
+    try {
+        const { providerId, containerId, path } = req.body;
+        const provider = getProviderById(providerId);
 
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
+        const response = await makeRequestToProvider(provider, 'containers/list-files', 'get', { containerId, path });
+        res.json(response.data);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to list files', details: error.message });
+    }
+};
+
+const getSystemInfo = async (req, res) => {
+    try {
+        const { providerId } = req.body;
+        const provider = getProviderById(providerId);
+
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        const response = await makeRequestToProvider(provider, 'systeminfo', 'get');
+        res.json(response.data);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch system info', details: error.message });
+    }
+};
+const writeFile = async (req, res) => {
+    try {
+        const { providerId, path, content, containerId } = req.body;
+        const provider = getProviderById(providerId);
+
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        const response = await makeRequestToProvider(provider, 'containers/write-file', 'post', { path, content, containerId });
+        res.json(response.data);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to write file', details: error.message });
+    }
+};
+
+export { handleHeartbeat, getAllProviders, getProviderById, cleanupProviders, startContainer, stopContainer, createContainer, pullImage, readFile, listFiles, attachTerminal, getSystemInfo, writeFile };
 
 
